@@ -9,4 +9,6 @@
 config.md
 config.yml
 sidebar.json
+nav.json
 package.json
+Cargo.lock
