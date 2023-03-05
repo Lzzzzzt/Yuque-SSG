@@ -1,0 +1,12 @@
+/target
+
+/node_modules
+
+/docs
+
+.DS_Store
+
+config.md
+config.yml
+sidebar.json
+package.json
