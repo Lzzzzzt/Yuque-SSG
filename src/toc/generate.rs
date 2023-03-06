@@ -8,9 +8,10 @@ use std::{
 
 use log::{debug, info};
 
-use super::{Frontmatter, NavbarItem};
+use super::{Frontmatter, SidebarItem};
+use crate::error::Result;
 
-pub fn generate_doc_sidebar(doc_dir: impl AsRef<Path>) -> anyhow::Result<()> {
+pub fn generate_doc_sidebar(doc_dir: impl AsRef<Path>) -> Result<()> {
     info!(
         "Walking the `{}` to generate sidebar.json",
         doc_dir.as_ref().display()
@@ -43,7 +44,7 @@ pub fn generate_doc_sidebar(doc_dir: impl AsRef<Path>) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn walk(dir: impl AsRef<Path>, base: impl AsRef<Path>) -> anyhow::Result<Vec<NavbarItem>> {
+fn walk(dir: impl AsRef<Path>, base: impl AsRef<Path>) -> Result<Vec<SidebarItem>> {
     let path = if PathBuf::from(base.as_ref()).is_absolute() {
         PathBuf::from(base.as_ref())
     } else {
@@ -69,17 +70,15 @@ fn walk(dir: impl AsRef<Path>, base: impl AsRef<Path>) -> anyhow::Result<Vec<Nav
 
         let mut children = vec![];
 
-        let mut item_builder = NavbarItem::builder();
+        let mut item_builder = SidebarItem::builder();
 
         if file_type.is_dir() {
-            let Frontmatter { order, sidebar, .. } =
-                Frontmatter::from_file(file.path().join("index.md"))?;
-
-            // let text = BufReader::new(File::open(file.path().join("index.md")).unwrap())
-            //     .lines()
-            //     .next()
-            //     .unwrap()?;
-            // let text = sidebar.strip_prefix('#').unwrap().trim();
+            let Frontmatter {
+                order,
+                sidebar,
+                have_content,
+                ..
+            } = Frontmatter::from_file(file.path().join("index.md"))?;
 
             item_builder.text(sidebar.into()).order(order);
 
@@ -89,24 +88,21 @@ fn walk(dir: impl AsRef<Path>, base: impl AsRef<Path>) -> anyhow::Result<Vec<Nav
 
             children.append(&mut items);
 
-            item_builder.link(
-                path.join(format!("{}/", file_name))
-                    .display()
-                    .to_string()
-                    .to_lowercase(),
-            );
+            if have_content {
+                item_builder.link(
+                    path.join(format!("{}/", file_name))
+                        .display()
+                        .to_string()
+                        .to_lowercase(),
+                );
+            } else {
+                item_builder.link("".into());
+            }
 
             item_builder.items(Some(children));
             item_builder.collapsed(Some(false));
         } else if file_type.is_file() {
             let Frontmatter { order, sidebar, .. } = Frontmatter::from_file(file.path())?;
-
-            // item_builder.text(text.to_string()).order(order);
-            //     let text = BufReader::new(File::open(file.path()).unwrap())
-            //         .lines()
-            //         .next()
-            //         .unwrap()?;
-            // let text = sidebar.strip_prefix('#').unwrap().trim();
 
             item_builder.text(sidebar.into()).order(order);
 

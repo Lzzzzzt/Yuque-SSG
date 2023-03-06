@@ -3,9 +3,9 @@
 use std::{ops::Not, path::PathBuf};
 
 use pinyin::ToPinyin;
-use yuque_rust::TocItem;
+use yuque_rust::Toc;
 
-pub fn parse_toc_structure(root: &str, toc: &[TocItem]) -> Vec<PathBuf> {
+pub fn parse_toc_structure(root: &str, toc: &[Toc]) -> Vec<PathBuf> {
     let mut path = PathBuf::from(format!("./docs/{}", root));
 
     let mut level = 0;
@@ -13,28 +13,43 @@ pub fn parse_toc_structure(root: &str, toc: &[TocItem]) -> Vec<PathBuf> {
     let mut result = vec![];
 
     for item in toc {
-        
-        if level > item.level {
-            while level != item.level {
-                path.pop();
-                level -= 1;
+        if let Toc::Doc(item) = item {
+            if level > item.level {
+                while level != item.level {
+                    path.pop();
+                    level -= 1;
+                }
             }
+
+            if item.child_uuid.is_empty().not() {
+                level += 1;
+                path = path.join(item.title.to_string().to_pinyin_or_lowercase());
+
+                is_index = true;
+            }
+
+            if is_index {
+                result.push(path.join("index.md"));
+            } else {
+                result.push(path.join(format!("{}.md", item.title.to_pinyin_or_lowercase())));
+            }
+
+            is_index = false;
+        } else if let Toc::Title(item) = item {
+            if level > item.level {
+                while level != item.level {
+                    path.pop();
+                    level -= 1;
+                }
+            }
+
+            if item.child_uuid.is_empty().not() {
+                level += 1;
+                path = path.join(item.title.to_string().to_pinyin_or_lowercase());
+            }
+
+            result.push(path.clone());
         }
-
-        if item.child_uuid.is_empty().not() {
-            level += 1;
-            path = path.join(item.title.to_string().to_pinyin_or_lowercase());
-
-            is_index = true;
-        }
-
-        if is_index {
-            result.push(path.join("index.md"));
-        } else {
-            result.push(path.join(format!("{}.md", item.title.to_pinyin_or_lowercase())));
-        }
-
-        is_index = false;
     }
 
     result

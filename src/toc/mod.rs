@@ -9,15 +9,17 @@ use derive_builder::Builder;
 use log::debug;
 use serde::{Deserialize, Serialize};
 
+use crate::error::{Error, Result};
+
 pub mod generate;
 pub mod parse;
 
 #[derive(Serialize, Builder, Clone, Debug)]
-pub struct NavbarItem {
+pub struct SidebarItem {
     text: String,
     link: String,
     #[builder(default = "None")]
-    items: Option<Vec<NavbarItem>>,
+    items: Option<Vec<SidebarItem>>,
     #[builder(default = "None")]
     collapsed: Option<bool>,
     #[serde(skip)]
@@ -25,9 +27,9 @@ pub struct NavbarItem {
     order: u32,
 }
 
-impl NavbarItem {
-    pub fn builder() -> NavbarItemBuilder {
-        NavbarItemBuilder::default()
+impl SidebarItem {
+    pub fn builder() -> SidebarItemBuilder {
+        SidebarItemBuilder::default()
     }
 }
 
@@ -42,6 +44,8 @@ pub struct Frontmatter<'a> {
     order: u32,
     #[builder(default)]
     description: Option<Cow<'a, str>>,
+    #[builder(default = "true")]
+    have_content: bool,
 }
 
 impl<'a> Frontmatter<'a> {
@@ -55,7 +59,7 @@ impl<'a> Frontmatter<'a> {
         w.write_all(b"---\n").ok();
     }
 
-    pub fn from_file(path: impl AsRef<Path>) -> anyhow::Result<Self> {
+    pub fn from_file(path: impl AsRef<Path>) -> Result<Self> {
         debug!("Parsing frontmatter of: {}", path.as_ref().display());
 
         let reader = BufReader::new(File::open(path)?);
@@ -85,6 +89,21 @@ impl<'a> Frontmatter<'a> {
         debug!("frontmatter: \n{}", frontmatter);
 
         serde_yaml::from_str::<Frontmatter>(&frontmatter)
-            .map_err(|e| anyhow::Error::msg(e.to_string()))
+            .map_err(|e| Error::Internal(e.to_string()))
+    }
+}
+
+#[derive(Deserialize, Debug, Serialize)]
+pub struct NavbarItem {
+    pub text: String,
+    pub link: String,
+}
+
+impl From<(&str, &str)> for NavbarItem {
+    fn from(value: (&str, &str)) -> Self {
+        Self {
+            text: value.0.into(),
+            link: value.1.into(),
+        }
     }
 }
