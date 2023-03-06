@@ -1,4 +1,4 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, env};
 
 use serde::Deserialize;
 
@@ -37,9 +37,15 @@ impl<'a> Config<'a> {
             namespaces,
         } = self;
 
-        let title = title.ok_or(Error::MissingFields(stringify!(title).into()))?;
-        let host = host.ok_or(Error::MissingFields(stringify!(host).into()))?;
-        let token = token.ok_or(Error::MissingFields(stringify!(token).into()))?;
+        let title = title
+            .or_else(|| env::var("YUQUE_SSG_TITLE").map(Cow::from).ok())
+            .ok_or(Error::MissingFields(stringify!(title).into()))?;
+        let host = host
+            .or_else(|| env::var("YUQUE_SSG_HOST").map(Cow::from).ok())
+            .ok_or(Error::MissingFields(stringify!(host).into()))?;
+        let token = token
+            .or_else(|| env::var("YUQUE_SSG_TOKEN").map(Cow::from).ok())
+            .ok_or(Error::MissingFields(stringify!(token).into()))?;
 
         Ok(CheckedConfig {
             title,
