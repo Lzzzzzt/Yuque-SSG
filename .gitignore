@@ -1,14 +1,14 @@
 /target
-
 /node_modules
-
 /docs
+/.idea
 
 .DS_Store
-
 config.md
 config.yml
 sidebar.json
 nav.json
 package.json
+
 Cargo.lock
+pnpm-lock.yaml
