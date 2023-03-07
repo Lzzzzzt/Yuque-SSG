@@ -55,7 +55,7 @@ pub fn parse_toc_structure(root: &str, toc: &[Toc]) -> Vec<PathBuf> {
     result
 }
 
-trait Pinyin
+pub trait Pinyin
 where
     Self: ToString,
 {
