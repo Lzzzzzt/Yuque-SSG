@@ -25,16 +25,18 @@ mod initialize {
     use log::{debug, info, warn};
     use serde_json::Value;
 
-    use crate::config::GeneratorConfig;
+    use crate::config::{Check, CheckedGeneratorConfig, CheckedSiteConfig};
     use crate::{
-        config::{CheckedConfig, Config},
+        config::Config,
         error::{Error, Result},
     };
 
     const DEFAULT_JSON: &[u8] = br#"{ "name": "yuque-ssg", "version": "1.0.0", "description": "", "main": "index.js", "scripts": {  "docs:dev": "vitepress dev docs",  "docs:build": "vitepress build docs", "docs:preview": "vitepress preview docs" }, "keywords": [], "author": "", "license": "ISC", "devDependencies": { "vitepress": "1.0.0-alpha.49", "vue": "^3.2.47" }}"#;
 
     impl<'a> Config<'a> {
-        pub fn read_config(path: impl AsRef<Path>) -> Result<CheckedConfig<'a>> {
+        pub fn read_config(
+            path: impl AsRef<Path>,
+        ) -> Result<(CheckedSiteConfig<'a>, CheckedGeneratorConfig<'a>)> {
             let config_file = File::open(path)?;
 
             info!("Read config from: `config.yml`");
@@ -49,7 +51,7 @@ mod initialize {
         }
     }
 
-    impl<'a> CheckedConfig<'a> {
+    impl<'a> CheckedSiteConfig<'a> {
         pub fn check_env(self) -> Result<Self> {
             info!("Checking node.");
 
@@ -105,7 +107,7 @@ mod initialize {
             Ok(self)
         }
 
-        pub fn generate_config_js(self) -> Result<GeneratorConfig<'a>> {
+        pub fn generate_config_js(self) -> Result<()> {
             info!("Generating `config.js`");
 
             let file_path = Path::new("./docs/.vitepress/config.js");
@@ -122,14 +124,11 @@ mod initialize {
 
             let mut js_file = File::create(file_path)?;
 
-            let CheckedConfig {
+            let CheckedSiteConfig {
                 title,
                 lang,
                 description,
                 base,
-                host,
-                token,
-                namespaces,
             } = self;
 
             let content = format!(
@@ -158,12 +157,7 @@ export default defineConfig({{
 
             js_file.write_all(content.as_bytes())?;
 
-            Ok(GeneratorConfig {
-                host,
-                token,
-                base,
-                namespaces,
-            })
+            Ok(())
         }
 
         fn install_dependencies(program: &str) -> Result<()> {
