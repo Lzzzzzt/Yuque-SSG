@@ -1,4 +1,5 @@
-mod initialize {
+pub mod initialize {
+
     //! SSG 的初始化阶段
     //! 1. 读取配置
     //! 2. 检查环境是否准备完成
@@ -13,19 +14,19 @@ mod initialize {
     //!
 
     use std::ops::Not;
-    use std::thread::sleep;
+
     use std::time::Duration;
-    use std::{
-        fs::{rename, File},
-        io::Write,
-        path::Path,
-        process::{exit, Command},
-    };
+    use std::{path::Path, process::exit};
 
     use log::{debug, info, warn};
     use serde_json::Value;
+    use tokio::fs::{rename, File};
+    use tokio::io::AsyncWriteExt;
+    use tokio::process::Command;
+    use tokio::time::sleep;
 
     use crate::config::{Check, CheckedGeneratorConfig, CheckedSiteConfig};
+    use crate::generator::Generator;
     use crate::{
         config::Config,
         error::{Error, Result},
@@ -37,7 +38,7 @@ mod initialize {
         pub fn read_config(
             path: impl AsRef<Path>,
         ) -> Result<(CheckedSiteConfig<'a>, CheckedGeneratorConfig<'a>)> {
-            let config_file = File::open(path)?;
+            let config_file = std::fs::File::open(path)?;
 
             info!("Read config from: `config.yml`");
 
@@ -52,18 +53,19 @@ mod initialize {
     }
 
     impl<'a> CheckedSiteConfig<'a> {
-        pub fn check_env(self) -> Result<Self> {
+        pub async fn check_env(&self) -> Result<()> {
             info!("Checking node.");
 
             Command::new("node")
                 .arg("-v")
                 .output()
+                .await
                 .map_err(|_| Error::MissingEnv("node".into()))?;
 
             info!("Checking `node.js` package manager.");
-            let pnpm = Command::new("pnpm").arg("-v").output().is_ok();
-            let yarn = Command::new("yarn").arg("-v").output().is_ok();
-            let npm = Command::new("npm").arg("-v").output().is_ok();
+            let pnpm = Command::new("pnpm").arg("-v").output().await.is_ok();
+            let yarn = Command::new("yarn").arg("-v").output().await.is_ok();
+            let npm = Command::new("npm").arg("-v").output().await.is_ok();
 
             (pnpm || yarn || npm)
                 .then_some(true)
@@ -72,9 +74,9 @@ mod initialize {
             info!("Checking `package.json`.");
             if Path::new("package.json").exists() {
                 info!("Find existed `package.json`, checking.");
-                let json_file = File::open("package.json")?;
+                let json_file = std::fs::File::open("package.json")?;
 
-                let json = serde_json::from_reader::<File, Value>(json_file)?;
+                let json = serde_json::from_reader::<std::fs::File, Value>(json_file)?;
 
                 let json = json
                     .as_object()
@@ -94,20 +96,23 @@ mod initialize {
                     .ok_or(Error::MissingDependency("vitepress".into()))?;
             } else {
                 info!("Can not find existed `package.json` in current directory, write a default version.");
-                File::create("package.json")?.write_all(DEFAULT_JSON)?;
+                File::create("package.json")
+                    .await?
+                    .write_all(DEFAULT_JSON)
+                    .await?;
             }
 
             match (pnpm, yarn, npm) {
-                (true, _, _) => Self::install_dependencies("pnpm")?,
-                (_, true, _) => Self::install_dependencies("yarn")?,
-                (_, _, true) => Self::install_dependencies("npm")?,
+                (true, _, _) => Self::install_dependencies("pnpm").await?,
+                (_, true, _) => Self::install_dependencies("yarn").await?,
+                (_, _, true) => Self::install_dependencies("npm").await?,
                 _ => Err(Error::MissingEnv("npm".into()))?,
             }
 
-            Ok(self)
+            Ok(())
         }
 
-        pub fn generate_config_js(self) -> Result<()> {
+        pub async fn generate_config_js(self) -> Result<()> {
             info!("Generating `config.js`");
 
             let file_path = Path::new("./docs/.vitepress/config.js");
@@ -115,14 +120,14 @@ mod initialize {
             if file_path.exists() {
                 info!("Find existed `config.js`, rename it to `config.old.js`");
                 let new_file_path = file_path.parent().unwrap().join("config.old.js");
-                rename(file_path, new_file_path)?;
+                rename(file_path, new_file_path).await?;
             }
 
             if file_path.parent().unwrap().exists().not() {
                 std::fs::create_dir_all(file_path.parent().unwrap())?;
             }
 
-            let mut js_file = File::create(file_path)?;
+            let mut js_file = File::create(file_path).await?;
 
             let CheckedSiteConfig {
                 title,
@@ -155,12 +160,12 @@ export default defineConfig({{
                 description.unwrap_or_default(),
             );
 
-            js_file.write_all(content.as_bytes())?;
+            js_file.write_all(content.as_bytes()).await?;
 
             Ok(())
         }
 
-        fn install_dependencies(program: &str) -> Result<()> {
+        async fn install_dependencies(program: &str) -> Result<()> {
             info!("use `{}`", program);
 
             let mut failed_count: u8 = 0;
@@ -168,7 +173,7 @@ export default defineConfig({{
             while failed_count < 3 {
                 info!("Install the dependencies.");
 
-                let command = Command::new(program).arg("install").output()?;
+                let command = Command::new(program).arg("install").output().await?;
 
                 if command.status.success() {
                     break;
@@ -180,7 +185,7 @@ export default defineConfig({{
                     }
                     failed_count += 1;
 
-                    sleep(Duration::from_secs(3));
+                    sleep(Duration::from_secs(3)).await;
                 }
             }
 
@@ -192,4 +197,36 @@ export default defineConfig({{
             Ok(())
         }
     }
+
+    pub async fn initialize() -> Result<()> {
+        let (site, gen) = Config::read_config("config.yml")?;
+
+        site.check_env().await?;
+        site.generate_config_js().await?;
+
+        let generator: Generator = gen.into();
+
+        generator.generate().await?;
+
+        match Command::new("npm")
+            .args(["run", "docs:build"])
+            .output()
+            .await
+        {
+            Ok(_) => (),
+            Err(e) => {
+                warn!("command `npm run docs:build` failed. ");
+                warn!("{}", e);
+                warn!("Retry after 3s.");
+                sleep(Duration::from_secs(3)).await;
+                Command::new("npm")
+                    .args(["run", "docs:build"])
+                    .output()
+                    .await?;
+            }
+        }
+        Ok(())
+    }
 }
+
+mod running {}
