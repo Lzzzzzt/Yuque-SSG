@@ -15,6 +15,7 @@ use std::path::Path;
 
 use actix_web::web::{self, Data};
 use log::{debug, info, warn};
+use tokio::fs;
 use tokio::process::Command;
 use tokio::sync::{Notify, RwLock};
 
@@ -115,23 +116,27 @@ impl<'a> CheckedSiteConfig<'a> {
     }
 
     pub async fn clone_theme(&self) -> Result<()> {
-        info!("Cloning the theme repo into current directory.");
+        if fs::try_exists("./theme").await? {
+            info!("Theme directory exists. Skipping clone the repo");
+        } else {
+            info!("Cloning the theme repo into current directory.");
 
-        let theme_repo = &self.theme;
+            let theme_repo = &self.theme;
 
-        if !run_display_command_output(
-            "git",
-            &["clone", theme_repo, "./theme", "--depth", "1"],
-            0,
-            1,
-        )
-        .await
-        {
-            warn!("Can not fetch theme repo");
-            return Err(Error::CantFetchTheme);
+            if !run_display_command_output(
+                "git",
+                &["clone", theme_repo, "./theme", "--depth", "1"],
+                0,
+                1,
+            )
+            .await
+            {
+                warn!("Can not fetch theme repo");
+                return Err(Error::CantFetchTheme);
+            }
+
+            copy("./theme", "./")?;
         }
-
-        copy("./theme", "./")?;
 
         Ok(())
     }
