@@ -107,7 +107,7 @@ fn walk(dir: impl AsRef<Path>, base: impl AsRef<Path>) -> Result<Vec<SidebarItem
             item_builder.text(sidebar.into()).order(order);
 
             item_builder.link(
-                path.join(format!("{}.html", file_name.split_once('.').unwrap().0))
+                path.join(format!("{}.md", file_name.split_once('.').unwrap().0))
                     .display()
                     .to_string()
                     .to_lowercase(),

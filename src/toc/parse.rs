@@ -31,7 +31,7 @@ pub fn parse_toc_structure(root: &str, toc: &[Toc]) -> Vec<PathBuf> {
             if is_index {
                 result.push(path.join("index.md"));
             } else {
-                result.push(path.join(format!("{}.md", item.title)));
+                result.push(path.join(format!("{}.md", item.title.to_pinyin_or_lowercase())));
             }
 
             is_index = false;
