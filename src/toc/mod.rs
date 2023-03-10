@@ -8,6 +8,7 @@ use std::{
 use derive_builder::Builder;
 use log::debug;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::error::{Error, Result};
 
@@ -97,6 +98,7 @@ impl<'a> Frontmatter<'a> {
 pub struct NavbarItem {
     pub text: String,
     pub link: String,
+    pub items: Option<Vec<NavbarItem>>,
 }
 
 impl From<(&str, &str)> for NavbarItem {
@@ -104,6 +106,17 @@ impl From<(&str, &str)> for NavbarItem {
         Self {
             text: value.0.into(),
             link: value.1.into(),
+            items: None,
         }
+    }
+}
+
+impl From<NavbarItem> for Value {
+    fn from(value: NavbarItem) -> Self {
+        serde_json::json!({
+            "text": value.text,
+            "link": value.link,
+            "items": value.items
+        })
     }
 }

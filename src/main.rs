@@ -1,32 +1,43 @@
 #![feature(result_option_inspect)]
 
-use log::error;
-use yuque_ssg::{config::Config, generator::Generator, log::init_logger};
-
-use std::{
-    error::Error,
-    os::unix::process::CommandExt,
-    process::{exit, Command},
+use actix_files::NamedFile;
+use actix_web::{
+    dev::{fn_service, ServiceRequest, ServiceResponse},
+    middleware::Logger,
+    App, HttpServer,
 };
 
-#[tokio::main]
+use yuque_ssg::{
+    handler::{static_file, webhook},
+    init::initialize,
+    log::init_logger,
+};
+
+use std::error::Error;
+
+#[actix_web::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     init_logger();
 
-    let config = Config::read_config("config.yml")
-        .and_then(|config| config.check_env())
-        .and_then(|config| config.generate_config_js())
-        .inspect_err(|e| {
-            error!("{}", e);
-            exit(1)
-        })?;
+    let ((rebuild, rebuild_info), config) = initialize().await?;
 
-    let generator: Generator = config.into();
-    generator.generate().await?;
-
-    Command::new("npm")
-        .args(["run", "docs:dev", "--", "--host", "0.0.0.0"])
-        .exec();
+    HttpServer::new(move || {
+        App::new()
+            .wrap(Logger::new("%r %s"))
+            .app_data(rebuild.clone())
+            .app_data(rebuild_info.clone())
+            .service(webhook)
+            .service(static_file("/"))
+            .default_service(fn_service(|req: ServiceRequest| async {
+                let (req, _) = req.into_parts();
+                let file = NamedFile::open_async("docs/.vitepress/dist/404.html").await?;
+                let res = file.into_response(&req);
+                Ok(ServiceResponse::new(req, res))
+            }))
+    })
+    .bind(format!("{}:{}", config.host, config.port))?
+    .run()
+    .await?;
 
     Ok(())
 }

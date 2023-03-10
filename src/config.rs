@@ -1,4 +1,4 @@
-use std::{borrow::Cow, env};
+use std::{borrow::Cow, env, str::FromStr};
 
 use serde::Deserialize;
 
@@ -8,11 +8,13 @@ pub trait Check<T> {
     fn check(self) -> Result<T>;
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct Namespace<'a> {
     pub target: Cow<'a, str>,
     pub toc: bool,
     pub text: Cow<'a, str>,
+    #[serde(default)]
+    pub nav: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -23,6 +25,10 @@ pub struct SiteConfig<'a> {
     pub lang: Cow<'a, str>,
     #[serde(default = "default_base")]
     pub base: Cow<'a, str>,
+    #[serde(default = "default_host")]
+    pub host: Cow<'a, str>,
+    pub port: Option<u16>,
+    pub theme: Option<Cow<'a, str>>,
 }
 
 impl<'a> Check<CheckedSiteConfig<'a>> for SiteConfig<'a> {
@@ -31,11 +37,27 @@ impl<'a> Check<CheckedSiteConfig<'a>> for SiteConfig<'a> {
             title,
             description,
             lang,
+            host,
+            port,
             base,
+            theme,
         } = self;
 
         let title = title
             .or_else(|| env::var("YUQUE_SSG_TITLE").map(Cow::from).ok())
+            .ok_or(Error::MissingFields(stringify!(title).into()))?;
+
+        let port = port
+            .or_else(|| {
+                env::var("YUQUE_SSG_TITLE")
+                    .map(|p| u16::from_str(&p).ok())
+                    .ok()
+                    .flatten()
+            })
+            .ok_or(Error::MissingFields(stringify!(title).into()))?;
+
+        let theme = theme
+            .or_else(|| env::var("YUQUE_SSG_THEME").map(Cow::from).ok())
             .ok_or(Error::MissingFields(stringify!(title).into()))?;
 
         Ok(CheckedSiteConfig {
@@ -43,6 +65,9 @@ impl<'a> Check<CheckedSiteConfig<'a>> for SiteConfig<'a> {
             description,
             lang,
             base,
+            host,
+            port,
+            theme,
         })
     }
 }
@@ -52,6 +77,9 @@ pub struct CheckedSiteConfig<'a> {
     pub description: Option<Cow<'a, str>>,
     pub lang: Cow<'a, str>,
     pub base: Cow<'a, str>,
+    pub host: Cow<'a, str>,
+    pub port: u16,
+    pub theme: Cow<'a, str>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -60,12 +88,15 @@ pub struct GeneratorConfig<'a> {
     pub token: Option<Cow<'a, str>>,
     #[serde(default)]
     pub namespaces: Vec<Namespace<'a>>,
+    #[serde(default = "default_build_command")]
+    pub build_command: Cow<'a, str>,
 }
 
 pub struct CheckedGeneratorConfig<'a> {
     pub host: Cow<'a, str>,
     pub token: Cow<'a, str>,
     pub namespaces: Vec<Namespace<'a>>,
+    pub build_command: Cow<'a, str>,
 }
 
 impl<'a> Check<CheckedGeneratorConfig<'a>> for GeneratorConfig<'a> {
@@ -74,6 +105,7 @@ impl<'a> Check<CheckedGeneratorConfig<'a>> for GeneratorConfig<'a> {
             host,
             token,
             namespaces,
+            build_command,
         } = self;
 
         let host = host
@@ -87,6 +119,7 @@ impl<'a> Check<CheckedGeneratorConfig<'a>> for GeneratorConfig<'a> {
             host,
             token,
             namespaces,
+            build_command,
         })
     }
 }
@@ -111,4 +144,12 @@ fn default_base<'a>() -> Cow<'a, str> {
 
 fn default_lang<'a>() -> Cow<'a, str> {
     "zh-CN".into()
+}
+
+fn default_host<'a>() -> Cow<'a, str> {
+    "0.0.0.0".into()
+}
+
+fn default_build_command<'a>() -> Cow<'a, str> {
+    "npm run docs:build".into()
 }

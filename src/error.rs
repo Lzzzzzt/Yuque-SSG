@@ -14,12 +14,24 @@ pub enum Error {
     Io(String),
     #[error("missing required environment: {0}")]
     MissingEnv(String),
-    #[error("missing required dependency: {0}")]
-    MissingDependency(String),
+    #[error("Can not install the dependencies")]
+    CantInstallDependency,
     #[error("Yuque Client Error: {0}")]
     Yuque(String),
     #[error("Internal Error: {0}")]
     Internal(String),
+    #[error("Invalid Build Command: {0}.")]
+    InvalidBuildCommand(String),
+    #[error("Run command `{0}` failed.")]
+    Build(String),
+    #[error("Reqwest Error: {0}")]
+    Reqwest(String),
+    #[error("Invalid Url: {0}")]
+    InvalidUrl(String),
+    #[error("Image Error: {0}")]
+    Image(String),
+    #[error("Can not fetch the theme repo")]
+    CantFetchTheme,
 }
 
 impl From<std::io::Error> for Error {
@@ -55,5 +67,23 @@ impl From<crate::toc::FrontmatterBuilderError> for Error {
 impl From<crate::toc::SidebarItemBuilderError> for Error {
     fn from(value: crate::toc::SidebarItemBuilderError) -> Self {
         Self::Internal(value.to_string())
+    }
+}
+
+impl From<reqwest::Error> for Error {
+    fn from(value: reqwest::Error) -> Self {
+        Self::Reqwest(value.to_string())
+    }
+}
+
+impl From<url::ParseError> for Error {
+    fn from(value: url::ParseError) -> Self {
+        Self::InvalidUrl(value.to_string())
+    }
+}
+
+impl From<image::error::ImageError> for Error {
+    fn from(value: image::error::ImageError) -> Self {
+        Self::Image(value.to_string())
     }
 }

@@ -23,7 +23,7 @@ pub fn parse_toc_structure(root: &str, toc: &[Toc]) -> Vec<PathBuf> {
 
             if item.child_uuid.is_empty().not() {
                 level += 1;
-                path = path.join(item.title.to_string().to_pinyin_or_lowercase());
+                path = path.join(item.title.to_string());
 
                 is_index = true;
             }
@@ -31,7 +31,7 @@ pub fn parse_toc_structure(root: &str, toc: &[Toc]) -> Vec<PathBuf> {
             if is_index {
                 result.push(path.join("index.md"));
             } else {
-                result.push(path.join(format!("{}.md", item.title.to_pinyin_or_lowercase())));
+                result.push(path.join(format!("{}.md", item.title)));
             }
 
             is_index = false;
@@ -45,7 +45,7 @@ pub fn parse_toc_structure(root: &str, toc: &[Toc]) -> Vec<PathBuf> {
 
             if item.child_uuid.is_empty().not() {
                 level += 1;
-                path = path.join(item.title.to_string().to_pinyin_or_lowercase());
+                path = path.join(item.title.to_string());
             }
 
             result.push(path.clone());
