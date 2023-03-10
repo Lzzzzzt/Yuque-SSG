@@ -23,7 +23,7 @@ pub fn parse_toc_structure(root: &str, toc: &[Toc]) -> Vec<PathBuf> {
 
             if item.child_uuid.is_empty().not() {
                 level += 1;
-                path = path.join(item.title.to_string());
+                path = path.join(item.title.to_pinyin_or_lowercase());
 
                 is_index = true;
             }
@@ -45,7 +45,7 @@ pub fn parse_toc_structure(root: &str, toc: &[Toc]) -> Vec<PathBuf> {
 
             if item.child_uuid.is_empty().not() {
                 level += 1;
-                path = path.join(item.title.to_string());
+                path = path.join(item.title.to_pinyin_or_lowercase());
             }
 
             result.push(path.clone());
