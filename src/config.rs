@@ -49,7 +49,7 @@ impl<'a> Check<CheckedSiteConfig<'a>> for SiteConfig<'a> {
 
         let port = port
             .or_else(|| {
-                env::var("YUQUE_SSG_TITLE")
+                env::var("YUQUE_SSG_PORT")
                     .map(|p| u16::from_str(&p).ok())
                     .ok()
                     .flatten()
