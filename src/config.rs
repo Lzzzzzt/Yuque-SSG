@@ -54,11 +54,11 @@ impl<'a> Check<CheckedSiteConfig<'a>> for SiteConfig<'a> {
                     .ok()
                     .flatten()
             })
-            .ok_or(Error::MissingFields(stringify!(title).into()))?;
+            .ok_or(Error::MissingFields(stringify!(port).into()))?;
 
         let theme = theme
             .or_else(|| env::var("YUQUE_SSG_THEME").map(Cow::from).ok())
-            .ok_or(Error::MissingFields(stringify!(title).into()))?;
+            .ok_or(Error::MissingFields(stringify!(theme).into()))?;
 
         Ok(CheckedSiteConfig {
             title,
