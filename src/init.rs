@@ -134,9 +134,9 @@ impl<'a> CheckedSiteConfig<'a> {
                 warn!("Can not fetch theme repo");
                 return Err(Error::CantFetchTheme);
             }
-
-            copy("./theme", "./")?;
         }
+
+        copy("./theme", "./")?;
 
         Ok(())
     }
