@@ -81,6 +81,8 @@ impl<'n> Generator<'n> {
         let navbar_item: NavbarItem;
         let p: (i32, PathBuf);
 
+        let mut article_path = self.article_path.write().await;
+
         if toc {
             let response = match repos.get(name, None).await {
                 Ok(response) => response.data,
@@ -95,7 +97,6 @@ impl<'n> Generator<'n> {
             let description = response.description.unwrap_or_default();
             let mut toc = response.toc.unwrap();
 
-            let mut article_path = self.article_path.write().await;
             article_path.insert(response.namespace.to_string(), HashMap::default());
             let ns_inner_path = article_path.get_mut(response.namespace.as_ref()).unwrap();
 
@@ -151,11 +152,26 @@ impl<'n> Generator<'n> {
                     repos.get(name, None).await?.data
                 }
             };
+
+            article_path.insert(response.namespace.to_string(), HashMap::default());
+            let ns_inner_path = article_path.get_mut(response.namespace.as_ref()).unwrap();
+
             let book_id = response.id;
             let ns_name = response.name.to_string();
             let ns_path = ns_name.to_lowercase();
             let description = response.description.unwrap_or_default();
             let response = docs.list_with_repo(name).await?.data;
+
+            for item in response.iter() {
+                ns_inner_path.insert(
+                    item.slug.to_string(),
+                    PathBuf::from(format!(
+                        "./docs/{}/{}.md",
+                        ns_path,
+                        item.title.to_pinyin_or_lowercase()
+                    )),
+                );
+            }
 
             for (i, item) in response.into_iter().enumerate() {
                 let path = PathBuf::from(format!(
