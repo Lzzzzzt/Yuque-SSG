@@ -403,9 +403,6 @@ impl<'n> Generator<'n> {
         let link_regex =
             regex::Regex::new(r"(?P<pre>[^!])\[(?P<title>[^\]]*)\]\((?P<src>[^\)]+)\)").unwrap();
 
-        // let host = url::Url::parse(&self.inner.read().await.client.host).unwrap();
-        // let host_domain = host.domain().unwrap();
-
         let article_path = self.article_path.read().await;
         let default_map = HashMap::default();
 
@@ -420,11 +417,15 @@ impl<'n> Generator<'n> {
             info!("Find link: {}", url);
 
             let path = PathBuf::from(url.path());
-            let doc_slug = path.file_name().unwrap().to_str().unwrap().to_string();
-            if let Some(path) = articles.get(&doc_slug) {
-                let path = path.strip_prefix("./docs").unwrap().display();
-                info!("change url to inner link: {}", path);
-                return format!("{}[{}](/{})", pre, title, path);
+
+            if let Some(doc_slug) = path.file_name() {
+                let doc_slug = doc_slug.to_str().unwrap().to_string();
+
+                if let Some(path) = articles.get(&doc_slug) {
+                    let path = path.strip_prefix("./docs").unwrap().display();
+                    info!("change url to inner link: {}", path);
+                    return format!("{}[{}](/{})", pre, title, path);
+                }
             }
 
             format!("{}[{}]({})", pre, title, src)
