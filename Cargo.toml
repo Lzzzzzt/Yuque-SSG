@@ -6,7 +6,6 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-yuque-rust = { git = "https://github.com/Lzzzzzt/yuque-rust.git" }
 tokio = { version = "1.0", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml = "0.9"
@@ -25,8 +24,4 @@ futures-util = "0.3.26"
 reqwest = { version = "0.11.14", features = ["blocking"] }
 base64 = "0.21.0"
 image = "0.24.5"
-
-
-
-
-
+yuque-rust = { git = "https://github.com/Lzzzzzt/yuque-rust.git" }

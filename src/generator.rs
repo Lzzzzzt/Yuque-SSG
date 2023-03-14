@@ -30,6 +30,7 @@ use crate::{run_display_command_output, USER_AGENT};
 
 pub struct Generator<'n> {
     inner: Arc<RwLock<GeneratorInner<'n>>>,
+    pub article_path: RwLock<HashMap<String, HashMap<String, PathBuf>>>,
 }
 
 pub struct GeneratorInner<'n> {
@@ -55,6 +56,8 @@ impl<'n> Generator<'n> {
             .build()
             .unwrap();
 
+        let article_path: HashMap<String, HashMap<String, PathBuf>> = HashMap::new();
+
         Self {
             inner: Arc::new(RwLock::new(GeneratorInner {
                 client,
@@ -63,6 +66,7 @@ impl<'n> Generator<'n> {
                 namespaces,
                 build_command,
             })),
+            article_path: RwLock::new(article_path),
         }
     }
 
@@ -91,14 +95,29 @@ impl<'n> Generator<'n> {
             let description = response.description.unwrap_or_default();
             let mut toc = response.toc.unwrap();
 
+            let mut article_path = self.article_path.write().await;
+            article_path.insert(response.namespace.to_string(), HashMap::default());
+            let ns_inner_path = article_path.get_mut(response.namespace.as_ref()).unwrap();
+
             toc.remove(0);
 
             let ns_path = &response.name.to_lowercase();
 
             let paths = parse_toc_structure(ns_path, &toc);
 
+            for (path, item) in zip(&paths, &toc) {
+                if let Toc::Doc(doc) = &item {
+                    ns_inner_path.insert(doc.url.to_string(), path.clone());
+                }
+            }
+
+            drop(article_path);
+
             for (i, (path, item)) in zip(paths, toc).enumerate() {
-                match Self::write_markdown_with_toc(&docs, path, name, item, i).await {
+                match &self
+                    .write_markdown_with_toc(&docs, path, name, item, i)
+                    .await
+                {
                     Ok(_) => (),
                     Err(e) => {
                         warn!("Can not write the file due to {}.", e);
@@ -145,7 +164,10 @@ impl<'n> Generator<'n> {
                     item.title.to_pinyin_or_lowercase()
                 ));
 
-                match Self::write_markdown(&docs, path, name, item.id as u32, i).await {
+                match self
+                    .write_markdown(&docs, path, name, item.id as u32, i)
+                    .await
+                {
                     Ok(_) => (),
                     Err(e) => {
                         warn!("Can not write the file due to {}.", e);
@@ -282,6 +304,7 @@ impl<'n> Generator<'n> {
     }
 
     async fn write_markdown_with_toc(
+        &self,
         client: &DocsClient,
         path: PathBuf,
         ns: &str,
@@ -290,7 +313,7 @@ impl<'n> Generator<'n> {
     ) -> Result<()> {
         match doc {
             Toc::Doc(doc) => {
-                Self::write_markdown(client, path, ns, doc.id, order).await?;
+                self.write_markdown(client, path, ns, doc.id, order).await?;
             }
             Toc::Title(title) => {
                 if path.exists().not() {
@@ -318,6 +341,7 @@ impl<'n> Generator<'n> {
     }
 
     async fn write_markdown(
+        &self,
         client: &DocsClient,
         path: PathBuf,
         ns: &str,
@@ -355,18 +379,48 @@ impl<'n> Generator<'n> {
 
         file.write_all(format!("# {}\n", doc.title).as_bytes())?;
 
-        let regex = regex::Regex::new(r"!\[(?P<title>[^\]]*)\]\((?P<src>[^\)]+)\)").unwrap();
+        let client = reqwest::blocking::Client::builder()
+            .user_agent(USER_AGENT)
+            .build()
+            .unwrap();
 
-        let result = regex.replace_all(&doc.body, |capture: &regex::Captures| {
+        let link_regex =
+            regex::Regex::new(r"(?P<pre>[^!])\[(?P<title>[^\]]*)\]\((?P<src>[^\)]+)\)").unwrap();
+
+        // let host = url::Url::parse(&self.inner.read().await.client.host).unwrap();
+        // let host_domain = host.domain().unwrap();
+
+        let article_path = self.article_path.read().await;
+        let default_map = HashMap::default();
+
+        let articles = article_path.get(ns).unwrap_or(&default_map);
+
+        let result = link_regex.replace_all(&doc.body, |capture: &regex::Captures| {
+            let src = capture.name("src").unwrap().as_str();
+            let title = capture.name("title").unwrap().as_str();
+            let pre = capture.name("pre").unwrap().as_str();
+
+            let url = url::Url::parse(src).unwrap();
+            info!("Find link: {}", url);
+
+            let path = PathBuf::from(url.path());
+            let doc_slug = path.file_name().unwrap().to_str().unwrap().to_string();
+            if let Some(path) = articles.get(&doc_slug) {
+                let path = path.strip_prefix("./docs").unwrap().display();
+                info!("change url to inner link: {}", path);
+                return format!("{}[{}](/{})", pre, title, path);
+            }
+
+            format!("{}[{}]({})", pre, title, src)
+        });
+
+        let image_regex = regex::Regex::new(r"!\[(?P<title>[^\]]*)\]\((?P<src>[^\)]+)\)").unwrap();
+
+        let result = image_regex.replace_all(&result, |capture: &regex::Captures| {
             let src = capture.name("src").unwrap().as_str();
 
             let url = url::Url::parse(src).unwrap();
             info!("Find image url: {}", url);
-
-            let client = reqwest::blocking::Client::builder()
-                .user_agent(USER_AGENT)
-                .build()
-                .unwrap();
 
             let response = client.get(url).send().unwrap();
 
