@@ -1,5 +1,3 @@
-#![feature(result_option_inspect)]
-
 use actix_files::NamedFile;
 use actix_web::{
     dev::{fn_service, ServiceRequest, ServiceResponse},

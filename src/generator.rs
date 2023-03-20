@@ -26,7 +26,7 @@ use crate::{
     error::Result,
     toc::{generate::generate_doc_sidebar, parse::parse_toc_structure, Frontmatter, NavbarItem},
 };
-use crate::{run_display_command_output, USER_AGENT};
+use crate::{run_display_command_output, CODEPEN_IFRAME, USER_AGENT};
 
 pub struct Generator<'n> {
     inner: Arc<RwLock<GeneratorInner<'n>>>,
@@ -416,15 +416,19 @@ impl<'n> Generator<'n> {
             let url = url::Url::parse(src).unwrap();
             info!("Find link: {}", url);
 
-            let path = PathBuf::from(url.path());
+            if url.domain().unwrap() == "codepen.io" {
+                return CODEPEN_IFRAME.replace("{}", src);
+            } else {
+                let path = PathBuf::from(url.path());
 
-            if let Some(doc_slug) = path.file_name() {
-                let doc_slug = doc_slug.to_str().unwrap().to_string();
+                if let Some(doc_slug) = path.file_name() {
+                    let doc_slug = doc_slug.to_str().unwrap().to_string();
 
-                if let Some(path) = articles.get(&doc_slug) {
-                    let path = path.strip_prefix("./docs").unwrap().display();
-                    info!("change url to inner link: {}", path);
-                    return format!("{}[{}](/{})", pre, title, path);
+                    if let Some(path) = articles.get(&doc_slug) {
+                        let path = path.strip_prefix("./docs").unwrap().display();
+                        info!("change url to inner link: {}", path);
+                        return format!("{}[{}](/{})", pre, title, path);
+                    }
                 }
             }
 
@@ -448,7 +452,7 @@ impl<'n> Generator<'n> {
             } else {
                 let image = image::load_from_memory(&bytes).unwrap();
                 let bs = image_to_base64(&image);
-                format!("![{}]({})", capture.name("title").unwrap().as_str(), bs)
+                format!("\n\n![{}]({})", capture.name("title").unwrap().as_str(), bs)
             }
         });
 

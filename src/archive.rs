@@ -83,9 +83,9 @@ fn convert_codepen_link_to_iframe<'a>(node: &'a AstNode<'a>) -> Result<()> {
     let mut url = String::new();
     let mut content = String::new();
 
-    if let &NodeValue::Link(ref link) = &node.data.borrow().value {
+    if let NodeValue::Link(link) = &node.data.borrow().value {
         url = String::from_utf8_lossy(&link.url).to_string();
-        if let &NodeValue::Text(ref text) = &node.first_child().unwrap().data.borrow().value {
+        if let NodeValue::Text(text) = &node.first_child().unwrap().data.borrow().value {
             content = String::from_utf8_lossy(text).to_string();
         }
     }

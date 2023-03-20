@@ -9,6 +9,8 @@ pub mod toc;
 mod archive;
 
 pub const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/31.0.1650.63 Safari/537.36";
+pub const CODEPEN_IFRAME: &str = r#"<iframe height="400" style="width: 100%;" scrolling="no" title="Untitled" src="{}" frameborder="no" loading="lazy" allowtransparency="true" allowfullscreen="true"></iframe>
+"#;
 
 use std::fs;
 use std::path::{Path, PathBuf};
