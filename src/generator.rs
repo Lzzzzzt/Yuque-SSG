@@ -1,36 +1,46 @@
-use std::borrow::Cow;
-use std::collections::HashMap;
-
-use std::io::Cursor;
-use std::sync::Arc;
-use std::time::Duration;
-use std::{io::Write, iter::zip, ops::Not, path::PathBuf};
+use std::{
+    borrow::Cow,
+    cell::RefCell,
+    collections::HashMap,
+    io::{Cursor, Write},
+    iter::zip,
+    ops::Not,
+    path::{Path, PathBuf},
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use base64::Engine;
-
+use comrak::nodes::{AstNode, NodeHeading, NodeHtmlBlock, NodeLink, NodeValue};
 use image::{DynamicImage, ImageOutputFormat};
 use log::{debug, error, info, warn};
-use tokio::fs::remove_dir_all;
-use tokio::sync::RwLock;
-use tokio::time::sleep;
+use regex::Regex;
+use serde_json::Value;
 use tokio::{
-    fs::{self, File},
+    fs::{self, remove_dir_all, File},
     io::AsyncWriteExt,
+    sync::RwLock,
+    time::sleep,
 };
 use yuque_rust::{DocsClient, Toc, Yuque};
 
-use crate::error::Error;
-use crate::toc::parse::Pinyin;
 use crate::{
     config::{CheckedGeneratorConfig, Namespace},
-    error::Result,
-    toc::{generate::generate_doc_sidebar, parse::parse_toc_structure, Frontmatter, NavbarItem},
+    error::{Error, Result},
+    formatter::Formatter,
+    run_display_command_output,
+    toc::{
+        generate::generate_doc_sidebar,
+        parse::{parse_toc_structure, Pinyin},
+        Frontmatter, NavbarItem,
+    },
+    CODEPEN_IFRAME, USER_AGENT,
 };
-use crate::{run_display_command_output, CODEPEN_IFRAME, USER_AGENT};
 
 pub struct Generator<'n> {
     inner: Arc<RwLock<GeneratorInner<'n>>>,
     pub article_path: RwLock<HashMap<String, HashMap<String, PathBuf>>>,
+    pub schemas: Mutex<HashMap<String, Value>>,
 }
 
 pub struct GeneratorInner<'n> {
@@ -67,6 +77,7 @@ impl<'n> Generator<'n> {
                 build_command,
             })),
             article_path: RwLock::new(article_path),
+            schemas: Mutex::new(HashMap::new()),
         }
     }
 
@@ -271,6 +282,49 @@ impl<'n> Generator<'n> {
 
         info!("Generate navbar config.");
 
+        let mut schemas = serde_json::json!({});
+        schemas["首页介绍"] = serde_json::json!([]);
+        schemas["首页链接"] = serde_json::json!([]);
+
+        self.schemas.lock().unwrap().iter_mut().for_each(|(k, v)| {
+            // schemas[k] = v.to_owned();
+            let v = v.as_object_mut().unwrap();
+            if let Some(v) = v.remove("首页介绍") {
+                schemas["首页介绍"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(serde_json::json!({
+                        "content": v,
+                        "link": k,
+                    }));
+            }
+
+            if let Some(v) = v.remove("首页链接") {
+                schemas["首页链接"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(serde_json::json!({
+                        "content": v,
+                        "link": k,
+                    }));
+            }
+
+            if !v.is_empty() {
+                warn!(
+                    "Schema `{}` has unused keys: {:?}",
+                    k,
+                    v.keys().collect::<Vec<_>>()
+                );
+            }
+        });
+
+        File::create("./schema.json")
+            .await?
+            .write_all(serde_json::to_string_pretty(&schemas)?.as_bytes())
+            .await?;
+
+        info!("Generate markdown schema.");
+
         Ok(())
     }
 
@@ -400,63 +454,24 @@ impl<'n> Generator<'n> {
             .build()
             .unwrap();
 
-        let link_regex =
-            regex::Regex::new(r"(?P<pre>[^!])\[(?P<title>[^\]]*)\]\((?P<src>[^\)]+)\)").unwrap();
-
         let article_path = self.article_path.read().await;
         let default_map = HashMap::default();
 
         let articles = article_path.get(ns).unwrap_or(&default_map);
 
-        let result = link_regex.replace_all(&doc.body, |capture: &regex::Captures| {
-            let src = capture.name("src").unwrap().as_str();
-            let title = capture.name("title").unwrap().as_str();
-            let pre = capture.name("pre").unwrap().as_str();
+        let mut formatter = Formatter::new();
 
-            let url = url::Url::parse(src).unwrap();
-            info!("Find link: {}", url);
+        let mut ap = path.components();
+        ap.next();
+        ap.next();
 
-            if url.domain().unwrap() == "codepen.io" {
-                return CODEPEN_IFRAME.replace("{}", src);
-            } else {
-                let path = PathBuf::from(url.path());
+        let content = filter_schema(&doc.body, ap.collect::<PathBuf>().as_path(), &self.schemas);
 
-                if let Some(doc_slug) = path.file_name() {
-                    let doc_slug = doc_slug.to_str().unwrap().to_string();
-
-                    if let Some(path) = articles.get(&doc_slug) {
-                        let path = path.strip_prefix("./docs").unwrap().display();
-                        info!("change url to inner link: {}", path);
-                        return format!("{}[{}](/{})", pre, title, path);
-                    }
-                }
-            }
-
-            format!("{}[{}]({})", pre, title, src)
-        });
-
-        let image_regex = regex::Regex::new(r"!\[(?P<title>[^\]]*)\]\((?P<src>[^\)]+)\)").unwrap();
-
-        let result = image_regex.replace_all(&result, |capture: &regex::Captures| {
-            let src = capture.name("src").unwrap().as_str();
-
-            let url = url::Url::parse(src).unwrap();
-            info!("Find image url: {}", url);
-
-            let response = client.get(url).send().unwrap();
-
-            let bytes = response.bytes().unwrap();
-
-            if bytes.starts_with(b"<svg") {
-                String::from_utf8_lossy(&bytes).lines().collect()
-            } else {
-                let image = image::load_from_memory(&bytes).unwrap();
-                let bs = image_to_base64(&image);
-                format!("\n\n![{}]({})", capture.name("title").unwrap().as_str(), bs)
-            }
-        });
-
-        file.write_all(result.as_bytes())?;
+        formatter
+            .parse(&content)
+            .format_with_args(convert_image_to_base64, &client)
+            .format_with_args(convert_link, articles)
+            .write_to(&mut file);
 
         debug!("Write File to: {}", path.display());
 
@@ -479,4 +494,185 @@ fn image_to_base64(img: &DynamicImage) -> String {
 
     let res_base64 = base64::prelude::BASE64_STANDARD.encode(image_data);
     format!("data:image/png;base64,{}", res_base64)
+}
+
+fn convert_image_to_base64<'a>(
+    node: &'a AstNode<'a>,
+    client: &reqwest::blocking::Client,
+) -> Result<()> {
+    let mut svg = vec![];
+
+    if let NodeValue::Image(i) = &mut node.data.borrow_mut().value {
+        let url = String::from_utf8_lossy(&i.url).to_string();
+        let url = url::Url::parse(&url)?;
+
+        info!("Find image url: {}", url);
+
+        let response = client.get(url).send()?;
+
+        let bytes = response.bytes()?;
+
+        if bytes.starts_with(b"<svg") {
+            svg = bytes.into();
+        } else {
+            i.url = image_to_base64(&image::load_from_memory(&bytes)?).into_bytes();
+        }
+    }
+
+    if svg.is_empty() {
+        return Ok(());
+    }
+
+    node.data.borrow_mut().value = NodeValue::HtmlBlock(NodeHtmlBlock {
+        block_type: 7,
+        literal: svg,
+    });
+
+    Ok(())
+}
+
+fn convert_link<'a>(node: &'a AstNode<'a>, articles: &HashMap<String, PathBuf>) -> Result<()> {
+    let mut url = String::new();
+    let mut content = None;
+
+    if let NodeValue::Link(link) = &node.data.borrow().value {
+        url = String::from_utf8_lossy(&link.url).to_string();
+        content = node.first_child();
+    }
+
+    let origin_url = url::Url::parse(&url)?;
+
+    let domain = origin_url
+        .domain()
+        .ok_or(Error::Internal(format!("Invalid url: {}", url)))?;
+
+    // Codepen
+    if domain.contains("codepen") {
+        let literal = CODEPEN_IFRAME.replace("{}", &url).into_bytes();
+        node.children().for_each(|node| node.detach());
+
+        let mut data = node.data.borrow_mut();
+        data.value = NodeValue::HtmlBlock(NodeHtmlBlock {
+            block_type: 6,
+            literal,
+        });
+
+        return Ok(());
+    }
+
+    // inner link
+    let path = PathBuf::from(origin_url.path());
+
+    let doc_slug = path
+        .file_name()
+        .ok_or(Error::Internal(format!("Invalid url path: {}", url)))?;
+    let doc_slug = doc_slug.to_str().unwrap().to_string();
+
+    let path = articles
+        .get(&doc_slug)
+        .ok_or(Error::Internal(format!("No such document: {}", doc_slug)))?;
+
+    let path = path.strip_prefix("./docs").unwrap().display();
+    info!("change url to inner link: {}", path);
+    node.children().for_each(|node| node.detach());
+
+    let mut data = node.data.borrow_mut();
+    data.value = NodeValue::Link(NodeLink {
+        url: format!("/{}", path).into_bytes(),
+        title: vec![],
+    });
+
+    if let Some(content) = content {
+        node.append(content);
+    }
+
+    Ok(())
+}
+
+#[allow(unused)]
+fn parse_schema_start_line<'a>(
+    node: &'a AstNode<'a>,
+    schema_start_line: &RefCell<u32>,
+) -> Result<()> {
+    let node_data = node.data.borrow();
+
+    if let NodeValue::HtmlBlock(html) = &node_data.value {
+        if !html.literal.starts_with(b"<hr") {
+            return Ok(());
+        }
+    }
+
+    let key_node = node
+        .next_sibling()
+        .ok_or(Error::InvalidSchema("expected attribution".into()))?;
+
+    let key_node_value = &key_node.data.borrow().value;
+
+    if let NodeValue::Heading(NodeHeading { level, .. }) = key_node_value {
+        if *level != 2 {
+            return Ok(());
+        }
+    }
+
+    key_node
+        .first_child()
+        .ok_or(Error::InvalidSchema("expected attribution".into()))?;
+
+    key_node
+        .next_sibling()
+        .ok_or(Error::InvalidSchema("expected value".into()))?;
+
+    *schema_start_line.borrow_mut() = key_node.data.borrow().start_line;
+    Ok(())
+}
+
+fn parse_schema(text: &str) -> serde_json::Value {
+    let mut current_key = "";
+
+    let lines = text.lines();
+    let mut schema = serde_json::json!({});
+    let anchor = Regex::new("<a .*>").unwrap();
+
+    for line in lines {
+        if anchor.is_match(line) || line.is_empty() {
+            continue;
+        }
+
+        if line.starts_with("##") {
+            current_key = line.trim_start_matches("##").trim();
+            schema[current_key] = serde_json::json!([]);
+            continue;
+        }
+
+        if !current_key.is_empty() {
+            schema[current_key]
+                .as_array_mut()
+                .unwrap()
+                .push(line.into());
+            current_key = "";
+        }
+    }
+
+    schema
+}
+
+fn filter_schema(text: &str, path: &Path, schemas: &Mutex<HashMap<String, Value>>) -> String {
+    info!("filter schema: {}", path.display());
+    let schemas = &mut schemas.lock().unwrap();
+
+    let regex = Regex::new(r"---").unwrap();
+
+    let mut split_result: Vec<_> = regex.split(text).collect();
+
+    if split_result.len() == 1 {
+        split_result.pop().unwrap().to_owned()
+    } else {
+        let schema_string = split_result.pop().unwrap();
+
+        let content_string = split_result;
+
+        let schema = parse_schema(schema_string);
+        schemas.insert(path.display().to_string(), schema);
+        content_string.join("---")
+    }
 }

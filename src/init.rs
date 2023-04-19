@@ -11,7 +11,7 @@
 //! 3. 启动服务器 todo
 //!
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use actix_web::web::{self, Data};
 use log::{debug, info, warn};
@@ -119,10 +119,18 @@ impl<'a> CheckedSiteConfig<'a> {
         if fs::try_exists("./theme").await? {
             info!("Theme directory exists. Skipping clone the repo");
         } else {
-            info!("Cloning the theme repo into current directory.");
-
             let theme_repo = &self.theme;
+            let path = PathBuf::from(theme_repo.to_string());
 
+            info!("Theme repo: {}", path.display());
+
+            if path.is_dir() {
+                info!("Theme repo is a local directory. Copying it.");
+                copy(path, "./")?;
+                return Ok(());
+            }
+
+            info!("Cloning the theme repo into current directory.");
             if !run_display_command_output(
                 "git",
                 &["clone", theme_repo, "./theme", "--depth", "1"],
@@ -183,11 +191,11 @@ pub async fn initialize<'a>() -> Result<((Data<Notify>, Data<RwLock<i32>>), Chec
 {
     let (site, gen) = Config::read_config("config.yml")?;
 
-    site.check_env().await?;
-
     let generator: Generator = gen.into();
 
     generator.generate_all().await?;
+
+    site.check_env().await?;
 
     generator.build().await?;
 

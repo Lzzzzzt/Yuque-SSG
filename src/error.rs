@@ -20,6 +20,8 @@ pub enum Error {
     Yuque(String),
     #[error("Internal Error: {0}")]
     Internal(String),
+    #[error("Invalid Schema: {0}")]
+    InvalidSchema(String),
     #[error("Invalid Build Command: {0}.")]
     InvalidBuildCommand(String),
     #[error("Run command `{0}` failed.")]

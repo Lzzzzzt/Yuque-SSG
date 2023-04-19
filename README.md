@@ -18,9 +18,9 @@ cd yuque-ssg && cargo run --release
 
 ## Todo
 
-- [ ] 主题
-- [ ] web hook，当语雀中内容更新时，自动触发 SSG 的 rebuild
+- [x] 主题
+- [x] web hook，当语雀中内容更新时，自动触发 SSG 的 rebuild
 - [ ] 投票、点赞、评论
-- [ ] 将 codepen 链接转换为 iframe
-- [ ] 替换引用知识库里的文章的连接
+- [x] 将 codepen 链接转换为 iframe
+- [x] 替换引用知识库里的文章的连接
 - [ ] 配置项：是否下载文章里的图片并替换
