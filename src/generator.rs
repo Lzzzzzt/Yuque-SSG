@@ -286,42 +286,7 @@ impl<'n> Generator<'n> {
         schemas["首页介绍"] = serde_json::json!([]);
         schemas["首页链接"] = serde_json::json!([]);
 
-        self.schemas.lock().unwrap().iter_mut().for_each(|(k, v)| {
-            // schemas[k] = v.to_owned();
-            let v = v.as_object_mut().unwrap();
-            if let Some(v) = v.remove("首页介绍") {
-                schemas["首页介绍"]
-                    .as_array_mut()
-                    .unwrap()
-                    .push(serde_json::json!({
-                        "content": v,
-                        "link": k,
-                    }));
-            }
-
-            if let Some(v) = v.remove("首页链接") {
-                schemas["首页链接"]
-                    .as_array_mut()
-                    .unwrap()
-                    .push(serde_json::json!({
-                        "content": v,
-                        "link": k,
-                    }));
-            }
-
-            if !v.is_empty() {
-                warn!(
-                    "Schema `{}` has unused keys: {:?}",
-                    k,
-                    v.keys().collect::<Vec<_>>()
-                );
-            }
-        });
-
-        File::create("./schema.json")
-            .await?
-            .write_all(serde_json::to_string_pretty(&schemas)?.as_bytes())
-            .await?;
+        self.write_schema().await?;
 
         info!("Generate markdown schema.");
 
@@ -369,6 +334,8 @@ impl<'n> Generator<'n> {
         }
 
         generate_doc_sidebar("./docs")?;
+
+        self.write_schema().await?;
 
         Ok(())
     }
@@ -474,6 +441,51 @@ impl<'n> Generator<'n> {
             .write_to(&mut file);
 
         debug!("Write File to: {}", path.display());
+
+        Ok(())
+    }
+
+    async fn write_schema(&self) -> Result<()> {
+        let mut schemas = serde_json::json!({});
+        schemas["首页介绍"] = serde_json::json!([]);
+        schemas["首页链接"] = serde_json::json!([]);
+
+        self.schemas.lock().unwrap().iter_mut().for_each(|(k, v)| {
+            // schemas[k] = v.to_owned();
+            let v = v.as_object_mut().unwrap();
+            if let Some(v) = v.remove("首页介绍") {
+                schemas["首页介绍"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(serde_json::json!({
+                        "content": v,
+                        "link": k,
+                    }));
+            }
+
+            if let Some(v) = v.remove("首页链接") {
+                schemas["首页链接"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(serde_json::json!({
+                        "content": v,
+                        "link": k,
+                    }));
+            }
+
+            if !v.is_empty() {
+                warn!(
+                    "Schema `{}` has unused keys: {:?}",
+                    k,
+                    v.keys().collect::<Vec<_>>()
+                );
+            }
+        });
+
+        File::create("./schema.json")
+            .await?
+            .write_all(serde_json::to_string_pretty(&schemas)?.as_bytes())
+            .await?;
 
         Ok(())
     }
